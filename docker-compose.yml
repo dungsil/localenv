@@ -1,0 +1,99 @@
+version: '3.8'
+
+networks:
+  postgres:
+  mongo:
+  smtp:
+  nginx:
+
+volumes:
+  postgres_data:
+  mongo_data:
+  smtp4dev_data:
+
+services:
+  postgres:
+    container_name: postgres
+    image: bitnami/postgresql:15
+    restart: unless-stopped
+    networks:
+      - postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - "postgres_data:/bitnami/postgresql"
+      - "./.cert:/opt/bitnami/postgresql/certs"
+    environment:
+      POSTGRESQL_PASSWORD: postgres
+      POSTGRESQL_ENABLE_TLS: "yes"
+      POSTGRESQL_TLS_CERT_FILE: /opt/bitnami/postgresql/certs/localhost.pem
+      POSTGRESQL_TLS_KEY_FILE: /opt/bitnami/postgresql/certs/localhost-key.pem
+      POSTGRESQL_TLS_CA_FILE: /opt/bitnami/postgresql/certs/rootCA.pem
+  mongo:
+    container_name: mongo
+    image: bitnami/mongodb:6.0
+    restart: unless-stopped
+    networks:
+      - mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/bitnami/mongodb
+    environment:
+      MONGODB_EXTRA_FLAGS: "--wiredTigerCacheSizeGB=2"
+      MONGODB_ROOT_PASSWORD: mongodb
+  smtp4dev:
+    container_name: smtp4dev
+    image: rnwood/smtp4dev:v3
+    restart: unless-stopped
+    networks:
+      - smtp
+    ports:
+      - '5000:80' # 웹 인터페이스
+      - '25:25' # SMTP
+      - '143:143' # IMAP
+    volumes:
+      - smtp4dev_data:/smtp4dev
+    environment:
+      - ServerOptions__HostName=localhost
+  nginx:
+    container_name: nginx
+    image: bitnami/nginx:1.23
+    depends_on:
+      - infisical-backend
+      - infisical-frontend
+    networks:
+      - nginx
+    ports:
+      - "80:80"
+      - "443:443"
+      - "3333:3333"
+    volumes:
+      - "./nginx:/opt/bitnami/nginx/conf/server_blocks:ro"
+      - "./nginx/_share:/opt/bitnami/nginx/conf/_share:ro"
+      - "./.cert:/bitnami/certs"
+  infisical-backend:
+    container_name: infisical-backend
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    image: infisical/backend
+    command: npm run start
+    env_file: .env.infisical
+    environment:
+      - NODE_ENV=production
+    networks:
+      - mongo
+      - smtp
+      - nginx
+  infisical-frontend:
+    container_name: infisical-frontend
+    restart: unless-stopped
+    depends_on:
+      - mongo
+      - infisical-backend
+    image: infisical/frontend
+    env_file: .env.infisical
+    networks:
+      - mongo
+      - nginx
